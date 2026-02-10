@@ -1,6 +1,6 @@
 library(htmlwidgets)
 
-provinces_full <- readRDS("../data_clean/provinces_full.rds")
+provinces_full <- readRDS("data_clean/provinces_full.rds")
 st_crs(provinces_full)
 provinces_leaflet <- st_transform(provinces_full, 4326)
 
