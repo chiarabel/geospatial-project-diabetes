@@ -23,9 +23,7 @@ library(leaflet)
 ```
 
 ```{r}
-# prov <- readRDS("data_clean/provinces_full.rds")
-
-prov <- sf::st_as_sf(prov)
+provinces_full <- readRDS("../data_clean/provinces_full.rds")
 ```
 
 # 1. basic summary of the variables 
@@ -299,6 +297,9 @@ ggplot(provinces_full) +
     caption = "Source: ISTAT"
   ) +
   theme_minimal()
+
+ggsave("../outputs/diabetes_mortality_rate.png", width = 6, height = 4, dpi = 300)
+
 ```
 
 *Ageing*
@@ -314,6 +315,8 @@ ggplot(provinces_full) +
     title = "Percentage of 65+ by province"
   ) +
   theme_minimal()
+
+ggsave("../outputs/pct_65+.png", width = 6, height = 4, dpi = 300)
 ```
 
 *Unemployment Rate*
@@ -330,6 +333,8 @@ ggplot(provinces_full) +
     title = "Unemployment rate by province"
   ) +
   theme_minimal()
+
+ggsave("../outputs/unemployment_rate.png", width = 6, height = 4, dpi = 300)
 
 ```
 
@@ -348,6 +353,9 @@ ggplot(provinces_full) +
     subtitle = "Same value for provinces within the same region"
   ) +
   theme_minimal()
+
+ggsave("../outputs/low_education_share.png", width = 6, height = 4, dpi = 300)
+
 ```
 
 *Adequate Nutrition*
@@ -365,6 +373,8 @@ ggplot(provinces_full) +
     subtitle = "Same value for provinces within the same region"
   ) +
   theme_minimal()
+
+ggsave("../outputs/adequate_nutrition.png", width = 6, height = 4, dpi = 300)
 ```
 
 *Sedentariness*
@@ -382,6 +392,8 @@ ggplot(provinces_full) +
     subtitle = "Same value for provinces within the same region"
   ) +
   theme_minimal()
+
+ggsave("../outputs/sedentariness.png", width = 6, height = 4, dpi = 300)
 
 ```
 ## 5.2 Interactive Maps 
