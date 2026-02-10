@@ -1,0 +1,225 @@
+---
+title: "Statistical Analysis With Moran's I"
+output: html_document
+date: "2026-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Global Moran's I for diabetes mortality (province level)
+
+## 1. Loading libraries
+```{r}
+# Libraries 
+library(sf)
+library(dplyr)
+library(spdep)
+library(tmap)
+library(viridis)
+library(ggplot2)
+
+```
+
+## 2. Data
+```{r}
+# Load data 
+# provinces_full <- readRDS("data_clean/provinces_full.rds")
+# Basic checks
+stopifnot(inherits(provinces_full, "sf"))
+stopifnot("diabetes_mort_rate" %in% names(provinces_full))
+```
+
+## 3. Choose a projected CRS for spatial operations
+```{r}
+# Moran's I uses neighbors, so CRS is not as critical as distance-based methods,
+# but projecting avoids potential geometry issues.
+# ETRS89 / LAEA Europe (EPSG:3035) is a standard choice for EU-wide work.
+prov_proj <- st_transform(provinces_full, 3035)
+
+# Optional: fix invalid geometries if needed
+if (any(!st_is_valid(prov_proj))) {
+  prov_proj <- st_make_valid(prov_proj)
+}
+```
+
+## 4. Build spatial weights (queen contiguity) 
+```{r}
+# Queen contiguity: provinces are neighbors if they share a border OR a point.
+nb_q <- poly2nb(prov_proj, queen = TRUE)
+
+# Check for "islands" (units with no neighbors)
+no_nb <- which(card(nb_q) == 0)
+if (length(no_nb) > 0) {
+  message("Provinces with zero neighbors (islands): ",
+          paste(prov_proj$prov_name[no_nb], collapse = ", "))
+}
+
+# Create weights list
+lw_q <- nb2listw(nb_q, style = "W", zero.policy = TRUE)
+
+```
+## 5. Global Moran's I
+```{r}
+
+y <- prov_proj$diabetes_mort_rate
+
+# Moran test (randomization)
+moran_res <- moran.test(y, lw_q, zero.policy = TRUE)
+print(moran_res)
+```
+It's strongly positive, so there is clustering.
+
+It means that provinces with high diabetes mortality tend to be located next to other high-mortality provinces, and low-mortality provinces tend to cluster together.
+
+## 6. Permutation test (more robust)
+```{r}
+set.seed(123)
+moran_mc <- moran.mc(y, lw_q, nsim = 999, zero.policy = TRUE)
+print(moran_mc)
+
+```
+Out of 999 random permutations, none produced a Moran’s I as large as the observed one. This confirms the result.
+
+# 7) Save results 
+```{r}
+moran_out <- data.frame(
+  statistic = "Global Moran's I",
+  I = as.numeric(moran_res$estimate[["Moran I statistic"]]),
+  expectation = as.numeric(moran_res$estimate[["Expectation"]]),
+  variance = as.numeric(moran_res$estimate[["Variance"]]),
+  p_value = moran_res$p.value,
+  mc_p_value = moran_mc$p.value,
+  nsim = 999
+)
+
+write.csv(moran_out, "outputs/moransI_diabetes.csv", row.names = FALSE)
+
+```
+
+# 8. Moran scatterplot 
+```{r}
+# This helps interpretation: slope ~ Moran's I
+png("outputs/moran_scatter_diabetes.png", width = 1200, height = 900, res = 140)
+moran.plot(y, lw_q, zero.policy = TRUE,
+           labels = prov_proj$prov_name,
+           xlab = "Diabetes mortality rate",
+           ylab = "Spatial lag of mortality rate",
+           main = "Moran scatterplot: diabetes mortality")
+dev.off()
+
+```
+
+# LISA (Local Moran's I)
+
+```{r}
+# 1 Local Moran statistics
+lisa <- localmoran(y, lw_q, zero.policy = TRUE)
+
+# localmoran() columns:
+# Ii      = local Moran's I
+# E.Ii    = expectation
+# Var.Ii  = variance
+# Z.Ii    = Z-score
+# Pr(z != E(Ii)) = pseudo p-value (normal approximation)
+prov_proj <- prov_proj %>%
+  mutate(
+    lisa_I   = lisa[, "Ii"],
+    lisa_z   = lisa[, "Z.Ii"],
+    lisa_p   = lisa[, "Pr(z != E(Ii))"]
+  )
+# 2. Compute spatial lag of y (needed for quadrant classification)
+lag_y <- lag.listw(lw_q, y, zero.policy = TRUE)
+
+# Standardize y and lag_y (z-scores)
+y_z <- as.numeric(scale(y))
+lag_y_z <- as.numeric(scale(lag_y))
+
+prov_proj <- prov_proj %>%
+  mutate(
+    y_z = y_z,
+    lag_y_z = lag_y_z
+  )
+
+```
+
+
+```{r}
+
+# 3. Cluster classification (HH, LL, HL, LH) with significance threshold
+alpha <- 0.05
+
+prov_proj <- prov_proj %>%
+  mutate(
+    lisa_cluster = case_when(
+      lisa_p <= alpha & y_z >= 0 & lag_y_z >= 0 ~ "High-High",
+      lisa_p <= alpha & y_z <= 0 & lag_y_z <= 0 ~ "Low-Low",
+      lisa_p <= alpha & y_z >= 0 & lag_y_z <= 0 ~ "High-Low",
+      lisa_p <= alpha & y_z <= 0 & lag_y_z >= 0 ~ "Low-High",
+      TRUE ~ "Not significant"
+    )
+  )
+
+# Optional: set factor order for nicer legends
+prov_proj$lisa_cluster <- factor(
+  prov_proj$lisa_cluster,
+  levels = c("High-High", "Low-Low", "High-Low", "Low-High", "Not significant")
+)
+
+```
+
+## 4. Quick diagnostic counts
+```{r}
+print(table(prov_proj$lisa_cluster))
+
+```
+
+## 5. Save LISA results table
+```{r}
+
+lisa_table <- prov_proj %>%
+  st_drop_geometry() %>%
+  select(
+    prov_code, prov_name, region_name,
+    diabetes_mort_rate,
+    lisa_I, lisa_z, lisa_p,
+    lisa_cluster
+  ) %>%
+  arrange(lisa_p)
+
+write.csv(lisa_table, "outputs/lisa_diabetes_table.csv", row.names = FALSE)
+
+```
+
+```{r}
+# 6. LISA cluster map (ggplot)
+# Note: default ggplot colors are fine (no need to set manual colors)
+prov_plot <- st_transform(prov_proj, 4326)
+
+p_lisa <- ggplot(prov_plot) +
+  geom_sf(aes(fill = lisa_cluster), color = "grey30", linewidth = 0.1) +
+  labs(
+    title = "LISA clusters for diabetes mortality (Local Moran's I)",
+    subtitle = paste0("Queen contiguity weights; significance alpha = ", alpha),
+    fill = "Cluster type",
+    caption = "High-High/Low-Low indicate significant local clustering; High-Low/Low-High indicate spatial outliers."
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+
+ggsave(
+  filename = "outputs/lisa_clusters_diabetes.png",
+  plot = p_lisa,
+  width = 10,
+  height = 7,
+  dpi = 200
+)
+
+p_lisa
+
+```
+

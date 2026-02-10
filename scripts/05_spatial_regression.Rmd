@@ -1,0 +1,186 @@
+---
+title: "Spatial Regression"
+output: html_document
+date: "2026-02-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries and data
+```{r}
+
+library(sf)
+library(dplyr)
+library(spdep)
+library(spatialreg)
+
+prov_sp <- readRDS("data_clean/provinces_full.rds")
+
+# project for geometric ops 
+prov_proj <- st_transform(prov_sp, 3035)
+
+# Fix geometries if needed
+if (any(!st_is_valid(prov_proj))) prov_proj <- st_make_valid(prov_proj)
+
+```
+
+## Weights
+```{r}
+# 2) Spatial weights: queen contiguity
+nb_q <- poly2nb(prov_proj, queen = TRUE)
+
+# check islands (should be none for provinces, but just in case)
+no_nb <- which(card(nb_q) == 0)
+if (length(no_nb) > 0) {
+  message("Zero-neighbor provinces: ", paste(prov_proj$prov_name[no_nb], collapse = ", "))
+}
+
+lw_q <- nb2listw(nb_q, style = "W", zero.policy = TRUE)
+
+
+```
+
+
+## OLS baseline
+```{r}
+ols <- lm(
+  diabetes_mort_rate ~
+    pct_65plus +
+    unemployment_rate +
+    low_education_share +
+    adequate_nutrition +
+    sedentariness,
+  data = prov_proj
+)
+summary(ols)
+
+# LM tests on OLS residuals (Elhorst-style decision)
+lm_tests <- lm.RStests(
+  ols, lw_q,
+  test = c("RSerr", "RSlag", "adjRSerr", "adjRSlag"),
+  zero.policy = TRUE
+)
+summary(lm_tests)
+
+```
+
+# Estimate Spatial Regression Models
+## 1. SAR
+```{r}
+# SAR (spatial lag / SLM)
+SAR <- lagsarlm(
+  diabetes_mort_rate ~
+    pct_65plus + unemployment_rate + low_education_share +
+    adequate_nutrition + sedentariness,
+  data = prov_proj, listw = lw_q, zero.policy = TRUE
+)
+summary(SAR)
+
+```
+
+- AIC ≈ 245.1, basically identical to OLS
+
+- LM test for residual autocorrelation: not significant
+
+Interpretation: There is no evidence of endogenous interaction in diabetes mortality. Mortality in one province does not depend directly on mortality in neighboring provinces.
+
+## 2. SEM
+```{r}
+# SEM (spatial error)
+SEM <- errorsarlm(
+  diabetes_mort_rate ~
+    pct_65plus + unemployment_rate + low_education_share +
+    adequate_nutrition + sedentariness,
+  data = prov_proj, listw = lw_q, zero.policy = TRUE
+)
+summary(SEM)
+
+```
+- AIC ≈ 247, worse than OLS
+- Coefficients almost identical to OLS
+
+Interpretation: There is no residual spatial dependence left once covariates are included. SEM is not needed, and adds no explanatory power.
+
+## 3. SDM
+```{r}
+# SDM (spatial Durbin model): lag + lagged covariates
+SDM <- lagsarlm(
+  diabetes_mort_rate ~
+    pct_65plus + unemployment_rate + low_education_share +
+    adequate_nutrition + sedentariness,
+  data = prov_proj, listw = lw_q, Durbin = TRUE, zero.policy = TRUE
+)
+summary(SDM)
+
+```
+
+rho ≈ −0.04, p ≈ 0.78 --> NOT significant
+
+lagged variables:
+- lag.unemployment_rate --> positive and highly significant
+- lag.low_education_share --> negative and significant
+- Other lagged terms --> not significant
+
+AIC ≈ 239.7, better than SAR and SEM, BUT not better than OLS (OLS AIC ≈ 237.8)
+
+Residual autocorrelation test: LM test significant
+
+
+
+## 4. SDEM
+```{r}
+# SDEM (Durbin error): error + lagged covariates
+SDEM <- errorsarlm(
+  diabetes_mort_rate ~
+    pct_65plus + unemployment_rate + low_education_share +
+    adequate_nutrition + sedentariness,
+  data = prov_proj, listw = lw_q, Durbin = TRUE, zero.policy = TRUE
+)
+summary(SDEM)
+
+```
+
+- lambda --> NOT significant (no strong residual spatial error)
+- lag.unemployment_rate --> positive, highly significant
+- lag.low_education_share --> negative, highly significant
+- All local covariates behave sensibly
+- AIC ≈ 238.9, better than SEM and SAR
+- LR test SDEM vs SEM: p < 0.01
+
+There is no spatial dependence in the dependent variable, nd no strong residual spatial error, but contextual effects from neighboring socio-economic conditions matter.
+
+
+## 5. SLX
+```{r}
+# SLX / LDM (lagged independent variables only) using OLS estimator
+SLX <- lmSLX(
+  diabetes_mort_rate ~
+    pct_65plus + unemployment_rate + low_education_share +
+    adequate_nutrition + sedentariness,
+  data = prov_proj, listw = lw_q, zero.policy = TRUE
+)
+summary(SLX)
+
+```
+
+nearly identical to SDEM
+
+## 6. Model simplification tests (LR tests) 
+```{r}
+
+# Can SDM simplify to SAR?
+anova(SDM, SAR)
+
+# Do lagged X terms matter beyond SEM? (SDEM vs SEM)
+anova(SDEM, SEM)
+
+```
+1. No strong evidence for SAR or SEM
+2. SDEM significantly improves over SEM --> Lagged X terms matter
+
+--> Since lambda is not significant and SLX gives the same structure, SLX / LDM is the most parsimonious and interpretable specification
+
+
+

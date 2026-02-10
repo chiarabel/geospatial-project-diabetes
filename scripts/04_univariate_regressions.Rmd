@@ -1,0 +1,210 @@
+---
+title: "Univariate and Multivariate OLS Regressions"
+output: html_document
+date: "2026-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Univariate Regressions
+
+# loading libraries and data
+```{r}
+library(sf)
+library(dplyr)
+library(broom)
+library(car)
+
+prov <- readRDS("data_clean/provinces_full.rds") %>%
+  st_drop_geometry()
+```
+
+# 1. Define Outcomes
+```{r}
+outcome <- "diabetes_mort_rate"
+
+predictors <- c(
+  "pct_65plus",
+  "unemployment_rate",
+  "low_education_share",
+  "adequate_nutrition",
+  "sedentariness"
+)
+```
+
+# 2. All univariate regressions (in a loop)
+```{r}
+uni_models <- lapply(predictors, function(var) {
+  f <- as.formula(paste(outcome, "~", var))
+  lm(f, data = prov)
+})
+
+names(uni_models) <- predictors
+
+```
+
+# 3. Tidy results into a table
+```{r}
+uni_results <- do.call(rbind, lapply(predictors, function(var) {
+  f <- as.formula(paste(outcome, "~", var))
+  m <- lm(f, data = prov)
+  s <- summary(m)
+  # coefficient row for the predictor is row 2 (after intercept)
+  co <- s$coefficients[2, ]
+  data.frame(
+    predictor = var,
+    estimate  = unname(co["Estimate"]),
+    std.error = unname(co["Std. Error"]),
+    statistic = unname(co["t value"]),
+    p.value   = unname(co["Pr(>|t|)"]),
+    r.squared = unname(s$r.squared),
+    n         = length(m$fitted.values),
+    row.names = NULL
+  )
+}))
+
+uni_results
+
+```
+Interpretation:
+- Age: The share of population aged 65 and over shows no statistically significant association with diabetes mortality in a univariate model. The effect is very small and explains virtually none of the spatial variability in mortality. This suggests that ageing alone is insufficient to explain differences in diabetes mortality across provinces.
+- Unemployment: it exhibits a strong positive and highly significant association with diabetes mortality. A one–percentage-point increase in the unemployment rate is associated with an average increase of about 0.27 deaths per 10,000 inhabitants.
+- Education: Regions with a higher proportion of low-educated population tend to have significantly higher diabetes mortality. The association is positive and statistically robust, although weaker than unemployment (0.17 deaths per 10,000 inhabitants every once-percentage-point)
+- Adequate nutrition: it shows a strong negative association with diabetes mortality. Provinces located in regions with higher shares of population meeting dietary recommendations tend to experience lower mortality rates.
+- Sedentariness: Higher levels of physical inactivity are associated with substantially higher mortality rates, and the model explains nearly two-thirds of the total variance.
+
+# 4. Visual Univariate Regressions
+
+# 4.1 Ageing
+```{r}
+library(ggplot2)
+
+ggplot(prov, aes(pct_65plus, diabetes_mort_rate)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "65+ (%)",
+    y = "Diabetes mortality rate",
+    title = "Univariate association between ageing (pct 65+) and diabetes mortality"
+  ) +
+  theme_minimal()
+```
+
+# 4.2 Unemployment
+```{r}
+library(ggplot2)
+
+ggplot(prov, aes(unemployment_rate, diabetes_mort_rate)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Unemployment rate (%)",
+    y = "Diabetes mortality rate",
+    title = "Univariate association between unemployment and diabetes mortality"
+  ) +
+  theme_minimal()
+```
+
+# 4.3 Education
+```{r}
+library(ggplot2)
+
+ggplot(prov, aes(low_education_share, diabetes_mort_rate)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Low Education Share (%)",
+    y = "Diabetes mortality rate",
+    title = "Univariate association between low education share and diabetes mortality"
+  ) +
+  theme_minimal()
+```
+
+# 4.2 Adequate Nutrition
+```{r}
+library(ggplot2)
+
+ggplot(prov, aes(adequate_nutrition, diabetes_mort_rate)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Adequate Nutrition (%)",
+    y = "Diabetes mortality rate",
+    title = "Univariate association between adequate nutrition and diabetes mortality"
+  ) +
+  theme_minimal()
+```
+
+# 4.2 Unemployment
+```{r}
+library(ggplot2)
+
+ggplot(prov, aes(sedentariness, diabetes_mort_rate)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    x = "Sedentariness (%)",
+    y = "Diabetes mortality rate",
+    title = "Univariate association between sedentariness and diabetes mortality"
+  ) +
+  theme_minimal()
+```
+
+# Multivariate OLS Model
+```{r}
+# Fit multivariate OLS model
+ols_multi <- lm(
+  diabetes_mort_rate ~
+    pct_65plus +
+    unemployment_rate +
+    low_education_share +
+    adequate_nutrition +
+    sedentariness,
+  data = prov
+)
+
+# Model summary
+summary(ols_multi)
+```
+## check for collinearity
+```{r}
+vif(ols_multi)
+
+```
+
+## extract coefficients into a clean table
+
+```{r}
+ols_table <- summary(ols_multi)$coefficients
+
+ols_results <- data.frame(
+  term = rownames(ols_table),
+  estimate = ols_table[, "Estimate"],
+  std_error = ols_table[, "Std. Error"],
+  t_value = ols_table[, "t value"],
+  p_value = ols_table[, "Pr(>|t|)"],
+  row.names = NULL
+)
+
+ols_results
+```
+
+## Moran's I on OLS residuals
+```{r}
+library(spdep)
+
+# Add residuals back to spatial object
+prov_sp <- provinces_full
+prov_sp$residuals_ols <- residuals(ols_multi)
+
+# Reuse your weights (queen contiguity)
+# nb_q and lw_q already defined earlier; if not, rebuild them
+
+moran.test(prov_sp$residuals_ols, lw_q, zero.policy = TRUE)
+
+```
+
+Moran’s I on OLS residuals → NOT significant
+This means that the spatial clustering observed in diabetes mortality is largely explained by the covariates included in the OLS model.
