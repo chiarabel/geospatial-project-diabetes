@@ -56,7 +56,7 @@ The cleaned dataset includes the mortality outcome together with explanatory fac
 In `scripts/02_descriptive_analysis.Rmd`, the project first explores distribution and geographic heterogeneity through choropleth maps. This stage is used to identify broad territorial patterns before estimating any model.
 
 The interactive map allows visual comparison across provinces:
-- Interactive map (HTML): [`docs/interactive_map.html`](docs/interactive_map.html)
+- Interactive map (HTML): [https://chiarabel.github.io/geospatial-project-diabetes/interactive_map.html](https://chiarabel.github.io/geospatial-project-diabetes/interactive_map.html)
 
 ## Descriptive Analysis
 ### Diabetes Mortality Map
