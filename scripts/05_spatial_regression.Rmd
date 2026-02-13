@@ -16,7 +16,7 @@ library(dplyr)
 library(spdep)
 library(spatialreg)
 
-prov_sp <- readRDS("data_clean/provinces_full.rds")
+prov_sp <- readRDS("../data_clean/provinces_full.rds")
 
 # project for geometric ops 
 prov_proj <- st_transform(prov_sp, 3035)
@@ -163,24 +163,24 @@ SLX <- lmSLX(
 )
 summary(SLX)
 
+AIC(SLX)
+
 ```
+Given the absence of significant $\rho$ and $\lambda$ parameters, the statistical relevance of spatially lagged explanatory variables, and the lowest AIC value among competing models, the SLX specification is selected as the preferred model.
 
-nearly identical to SDEM
-
-## 6. Model simplification tests (LR tests) 
+### 5.2 Some checks
 ```{r}
-
-# Can SDM simplify to SAR?
-anova(SDM, SAR)
-
-# Do lagged X terms matter beyond SEM? (SDEM vs SEM)
-anova(SDEM, SEM)
+# collinearity (again)
+car::vif(ols)
 
 ```
-1. No strong evidence for SAR or SEM
-2. SDEM significantly improves over SEM --> Lagged X terms matter
 
---> Since lambda is not significant and SLX gives the same structure, SLX / LDM is the most parsimonious and interpretable specification
+
+```{r}
+# Moran's I on SLX
+moran.test(residuals(SLX), lw_q, zero.policy = TRUE)
+
+```
 
 
 

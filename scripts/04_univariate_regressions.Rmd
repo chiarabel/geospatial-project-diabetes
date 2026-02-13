@@ -17,7 +17,7 @@ library(dplyr)
 library(broom)
 library(car)
 
-prov <- readRDS("data_clean/provinces_full.rds") %>%
+prov <- readRDS("../data_clean/provinces_full.rds") %>%
   st_drop_geometry()
 ```
 

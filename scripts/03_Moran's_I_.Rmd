@@ -25,7 +25,7 @@ library(ggplot2)
 ## 2. Data
 ```{r}
 # Load data 
-# provinces_full <- readRDS("data_clean/provinces_full.rds")
+provinces_full <- readRDS("../data_clean/provinces_full.rds")
 # Basic checks
 stopifnot(inherits(provinces_full, "sf"))
 stopifnot("diabetes_mort_rate" %in% names(provinces_full))
@@ -101,7 +101,7 @@ write.csv(moran_out, "outputs/moransI_diabetes.csv", row.names = FALSE)
 # 8. Moran scatterplot 
 ```{r}
 # This helps interpretation: slope ~ Moran's I
-png("outputs/moran_scatter_diabetes.png", width = 1200, height = 900, res = 140)
+png("../outputs/moran_scatter_diabetes.png", width = 1200, height = 900, res = 140)
 moran.plot(y, lw_q, zero.policy = TRUE,
            labels = prov_proj$prov_name,
            xlab = "Diabetes mortality rate",
