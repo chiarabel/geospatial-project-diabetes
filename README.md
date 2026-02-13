@@ -62,10 +62,23 @@ The interactive map allows visual comparison across provinces:
 ### Diabetes Mortality Map
 ![Diabetes mortality rate map](outputs/diabetes_mortality_rate.png)
 
+### Descriptive Findings Summary
+The descriptive evidence shows a clear territorial pattern in diabetes mortality. Rates are generally higher in Southern Italy (and in some Central provinces) and lower in much of the North. The observed range is wide, with the highest province (Agrigento, 9.08 per 10,000) far above the lowest (Bolzano, 1.85 per 10,000), indicating strong territorial inequality.
+
+Age structure varies substantially across provinces, but the geography of ageing does not perfectly overlap with the geography of mortality. This suggests that population ageing is important, but not sufficient on its own to explain provincial differences in mortality.
+
+Socio-economic and behavioural indicators show a more consistent spatial alignment with the mortality gradient. In particular, unemployment displays a strong North-South divide, with much higher values in Southern provinces. Low education (measured at regional level), lower adequate nutrition, and higher sedentariness also cluster more in Southern areas, pointing to a broader structural and lifestyle context associated with higher mortality.
+
+Overall, the descriptive stage supports the need for spatial modelling: the outcome and its potential determinants are geographically structured, and the same territorial divide appears across multiple domains.
+
 ### 3. Spatial Autocorrelation Diagnostics
 In `scripts/03_Moran's_I_.Rmd`, the analysis tests whether similar mortality values cluster geographically. Global Moran's I is used to evaluate overall spatial dependence, while local indicators (LISA) are used to detect province-level clusters and potential spatial outliers.
 
 This step is important because significant spatial autocorrelation implies that standard non-spatial assumptions are not fully appropriate. It motivates moving from purely aspatial models toward specifications that explicitly incorporate neighborhood structure.
+
+Using queen contiguity weights, Global Moran's I for diabetes mortality is `0.6805`, indicating strong positive spatial autocorrelation. The null of spatial randomness is rejected both by the analytical randomisation test (`p < 2.2e-16`) and by Monte Carlo permutations (`p = 0.001`).
+
+LISA confirms that spatial dependence is territorially concentrated rather than uniform: a High-High cluster is observed in Southern Italy, while a Low-Low cluster appears in the North. A Low-High outlier is also detected in Sicily. Overall, these results are consistent with the descriptive North-South mortality gradient and support the use of spatial regression models.
 
 ### 4. Regression Phase
 In `scripts/04_univariate_regressions.Rmd`, the project runs initial regression checks to understand one-by-one associations and directionality of effects. These baseline results are then extended in `scripts/05_spatial_regression.Rmd`, where spatially informed models are estimated.
@@ -82,25 +95,24 @@ This allows separate interpretation of:
 Substantively, this means a province's mortality level can be linked both to its own socioeconomic profile and to the profile of nearby provinces.
 
 ## Spatial Lag of X (SLX) Model Results
-Model call:
-```r
-lm(formula = formula(paste("y ~ ", paste(colnames(x)[-1], collapse = "+"))), 
-    data = as.data.frame(x), weights = weights)
-```
+|  | OLS | SLX |
+|---|---:|---:|
+| **Local effects (`beta`)** |  |  |
+| `pct_65plus` | 0.180*** | 0.214*** |
+| `unemployment_rate` | 0.090** | 0.071* |
+| `low_education_share` | -0.052* | 0.022 |
+| `adequate_nutrition` | -0.052* | -0.038 |
+| `sedentariness` | 0.096*** | 0.034 |
+| **Spatial spillovers (`theta`)** |  |  |
+| `lag.unemployment_rate` | -- | 0.163*** |
+| `lag.low_education_share` | -- | -0.125** |
+| `lag.pct_65plus` | -- | -0.066 |
+| `lag.adequate_nutrition` | -- | -0.015 |
+| `lag.sedentariness` | -- | 0.034 |
+| Observations | 107 | 107 |
+| AIC | 245.17 | 237.76 |
 
-| Term | Estimate | Std. Error | t value | Pr(>|t|) |
-|---|---:|---:|---:|---:|
-| (Intercept) | 2.434e+00 | 1.772e+00 | 1.374e+00 | 1.727e-01 |
-| pct_65plus | 2.137e-01 | 3.861e-02 | 5.534e+00 | 2.705e-07 |
-| unemployment_rate | 7.135e-02 | 3.052e-02 | 2.338e+00 | 2.146e-02 |
-| low_education_share | 2.226e-02 | 3.783e-02 | 5.884e-01 | 5.576e-01 |
-| adequate_nutrition | -3.807e-02 | 3.857e-02 | -9.871e-01 | 3.261e-01 |
-| sedentariness | 3.432e-02 | 3.352e-02 | 1.024e+00 | 3.084e-01 |
-| lag.pct_65plus | -6.644e-02 | 6.934e-02 | -9.582e-01 | 3.404e-01 |
-| lag.unemployment_rate | 1.630e-01 | 5.416e-02 | 3.010e+00 | 3.335e-03 |
-| lag.low_education_share | -1.253e-01 | 4.853e-02 | -2.581e+00 | 1.136e-02 |
-| lag.adequate_nutrition | -1.493e-02 | 5.063e-02 | -2.948e-01 | 7.688e-01 |
-| lag.sedentariness | 3.379e-02 | 3.912e-02 | 8.636e-01 | 3.899e-01 |
+Significance: `*** p < 0.01`, `** p < 0.05`, `* p < 0.1`.
 
 ### Main Signals (p < 0.05)
 - `pct_65plus`: positive and statistically significant; provinces with older populations tend to show higher diabetes mortality.
@@ -111,13 +123,16 @@ lm(formula = formula(paste("y ~ ", paste(colnames(x)[-1], collapse = "+"))),
 ### Reading The Non-Significant Terms
 Several local and lagged lifestyle covariates are not statistically significant in this model specification (`low_education_share`, `adequate_nutrition`, `sedentariness`, and selected lagged terms). In this project, these are treated as signals that either:
 - the effect is weak once other factors are controlled for,
-- the effect may be captured through correlated variables,
+- the effect may be captured through correlated variables (although multicollinearity diagnostics do not indicate severe instability),
 - or the available cross-sectional variation is not strong enough for precise estimation.
 
 ## Analytical Notes
 - The analysis is observational and cross-sectional; results indicate association, not strict causation.
 - Spatial effects are interpreted as dependence/contextual structure across neighboring provinces.
 - The workflow combines map-based exploration, autocorrelation diagnostics, and model-based inference to avoid relying on a single method.
+- The study uses an ecological design, so findings cannot be interpreted as individual-level causal effects.
+- Some explanatory variables are measured at regional level, which can smooth within-region heterogeneity.
+- Relevant determinants such as healthcare accessibility, income inequality, and environmental factors are not explicitly modelled.
 
 ## Reproducibility
 Run scripts in numeric order (`01` -> `05`) to reproduce the full workflow:
